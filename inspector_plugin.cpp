@@ -824,9 +824,15 @@ bool WriteDumpFile(const std::string& path, std::uint32_t& outCount) {
     const std::uint64_t seed = g_host->GetMasterSeed();
     std::fprintf(f, "========================================================================================================================\r\n");
     std::fprintf(f, u8" 怪物猎人：世界 冰原 (15.23) — RNG 微内核 + 插件体系 触发详表 (由 rng_inspector.dll 生成)\r\n");
-    std::fprintf(f, u8" 生成时间 : %04d-%02d-%02d %02d:%02d:%02d  |  接管:%s  |  总种子:%llu (0x%llX)  |  第 %llu 轮\r\n",
+    const std::uint32_t engMode = g_host->GetEngineMode();
+    const char* modeStr = (engMode == kMhwRngModeTakeover)
+                              ? u8"全局接管"
+                              : ((engMode == kMhwRngModeSelective)
+                                     ? u8"按需接管"
+                                     : ((engMode == kMhwRngModeObserveOnly) ? u8"仅观测" : u8"关闭"));
+    std::fprintf(f, u8" 生成时间 : %04d-%02d-%02d %02d:%02d:%02d  |  模式:%s  |  总种子:%llu (0x%llX)  |  第 %llu 轮\r\n",
                  st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond,
-                 g_host->IsTakeoverEnabled() ? u8"开启" : u8"关闭",
+                 modeStr,
                  static_cast<unsigned long long>(seed), static_cast<unsigned long long>(seed),
                  static_cast<unsigned long long>(g_host->GetEpoch()));
     std::fprintf(f, u8" 概览统计 : 共 %u 个活跃(RVA,Cond)槽  =  激活规则/插件钩子 %zu 处  |  核心玩法 %zu 处  |  背景环境/特效 %zu 处\r\n",
