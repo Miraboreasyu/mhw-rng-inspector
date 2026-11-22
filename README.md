@@ -3,7 +3,7 @@
 - **插件标识**：`inspector`（编译产物 `rng_inspector.dll`，版本 `2.1.0`）
 - **源码位置**：[inspector_plugin.cpp](inspector_plugin.cpp)、[rng_catalog_data.inl](rng_catalog_data.inl)
 - **离线词典生成工具**：[gen_rng_catalog.py](https://github.com/Miraboreasyu/mhw-rng/blob/main/tools/gen_rng_catalog.py)
-- **宿主依赖**：`mhw_rng.dll`（Plugin SDK `kMhwRngApiVersion == 2`，头文件 [mhw_rng_api.h](include/mhw_rng_api.h)）
+- **宿主依赖**：`mhw_rng.dll`（Plugin SDK `kMhwRngApiVersion == 3`，头文件 [mhw_rng_api.h](include/mhw_rng_api.h)）
 
 本文档说明 `rng_inspector` 插件的词典数据结构、元数据解析优先级、按消费尺度的数值换算规则以及各调试与导出子命令的行为。
 
@@ -118,7 +118,7 @@
 
 - `inspector_plugin.cpp`：插件主源码
 - `rng_catalog_data.inl`：离线生成的 1,697 处静态调用点与 793 处函数区间只读表
-- `include/mhw_rng_api.h`：本地携带的 `mhw_rng` Plugin SDK v2 头文件副本
+- `include/mhw_rng_api.h`：本地携带的 `mhw_rng` Plugin SDK v3 头文件副本
 - `sync_sdk.bat`：从核心框架目录同步 `include\mhw_rng_api.h`
 - `build.bat`：自动定位本机 MSVC x64 编译环境并输出 `build\rng_inspector.dll`
 
@@ -128,7 +128,7 @@
 python tools\gen_rng_catalog.py
 
 :: 2. 同步最新 SDK 头文件（不传参默认查找 ..\..\include 或 %MHW_RNG_SDK_DIR%）
-sync_sdk.bat D:\path\to\mhw_rng
+sync_sdk.bat <path-to-mhw-rng>
 
 :: 3. 独立编译至 build\rng_inspector.dll
 build.bat
