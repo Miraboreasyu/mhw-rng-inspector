@@ -1,6 +1,6 @@
 # `rng_inspector` 官方插件技术文档（调用点词典与遥测探针）
 
-- **插件标识**：`inspector`（编译产物 `rng_inspector.dll`，版本 `2.1.0`）
+- **插件标识**：`inspector`（编译产物 `rng_inspector.dll`，版本 `2.3.0`）
 - **源码位置**：[inspector_plugin.cpp](inspector_plugin.cpp)、[rng_catalog_data.inl](rng_catalog_data.inl)
 - **离线词典生成工具**：[gen_rng_catalog.py](https://github.com/Miraboreasyu/mhw-rng/blob/main/tools/gen_rng_catalog.py)
 - **宿主依赖**：`mhw_rng.dll`（Plugin SDK `kMhwRngApiVersion == 3`，头文件 [mhw_rng_api.h](include/mhw_rng_api.h)）
@@ -13,7 +13,7 @@
 
 `rng_inspector` 用于将底层的十六进制返回地址（`CallSiteRVA`）映射为可读的分类名称、函数符号与数值尺度，并提供游戏内实时观测（`top`、`list`、`info`、`dump`）及通用探索性锁定（`fix`、`seq`、`slotseed`、`bypass`、`clear`）命令。
 
-- **无抽签热路径介入**：本插件不调用 `RegisterSlotHook` 挂载任何抽签时回调，游戏运行过程中的随机数抽取不经过 `rng_inspector` 代码段。插件仅在玩家输入聊天命令或导出报表时被调用。
+- **按需零开销接入**：常规游玩时本插件不挂载抽签热路径 Hook，游戏随机数抽取完全不经过 `rng_inspector` 代码段；仅当玩家显式执行 `$rng trace <目标>` 时，才按需注册一次全局观测器捕获调用链与 `XMM6/XMM7` 现场（`$rng trace off` 即卸载）。
 - **按需加载与卸载**：若仅需运行确定好的业务插件（如 `rng_size.dll`），可随时通过 `$rng unload inspector` 卸载本插件以释放约 440 KB 词典只读数据，不会影响微内核或其它插件的运行。
 
 ---
@@ -94,6 +94,9 @@
 | `$rng list` | 列出当前所有处于非默认模式或挂载了插件回调的复合槽 |
 | `$rng info <target> [condId]` | 查看单个随机点（及指定条件号 `condId`，默认 `0`）的归属插件、当前模式、本轮次数与最近一次输出值 |
 | `$rng dump [path]` | 导出带 UTF-8 BOM 的完整中文报表（默认输出至 `nativePC\plugins\mhw_rng_dump.txt`），同时更新 `#序号` |
+| `$rng trace <target\|#idx\|*>` | 开启基于 `.pdata` 的标准化多跳调用栈 + `XMM6/XMM7` 采集（若当前模式为 `off` 自动切入非侵入式 `observe`） |
+| `$rng trace log [N]` / `dump [path]` | 按命中次数降序显示前 `N` 条完整 `0xRVA0(alias) <- 0xRVA1 <- ...` 调用链及最近返回值/`xmm6`/`xmm7`，或导出 `mhw_rng_trace.txt` |
+| `$rng trace off` / `clear` | 停止调用栈采集（保留已捕获结果供查看/导出）或清空调用栈追踪缓存 |
 
 `mhw_rng_dump.txt` 报表按三段组织：
 - **第一节**：当前激活了锁定规则或挂载了插件钩子的槽位；
