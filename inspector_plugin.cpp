@@ -20,6 +20,9 @@
 //         items atomically before mutating any kernel slot; never calls `g_host` under `g_idxMx`.
 // ============================================================================
 #include "mhw_rng_api.h"
+#include "mhw_rng_math.h"
+#include "mhw_world_api.h"
+#include "mhw_catalog_api.h"
 
 #include <windows.h>
 #include <algorithm>
@@ -95,10 +98,8 @@ constexpr std::size_t   kFuncRangeCount   = sizeof(kCatalogFuncRanges) / sizeof(
 constexpr std::size_t   kShortcutCount    = sizeof(kBuiltinShortcuts) / sizeof(kBuiltinShortcuts[0]);
 
 // Open-interval `(0.0f, 100.0f)` IEEE-754 bounds for `kScaleFloat100`:
-//   - `kMinSafeFloatU32` (`1U`)          -> `+2.3283064e-8f` (`> 0.0f`, skips `weight == 0` disabled rows under `<=`)
-//   - `kMaxSafeFloatU32` (`0xFFFFFF00U`) -> `99.9999924f`    (`< 100.0f`, never rounds up to `100.0f` / `1.0f`)
-constexpr std::uint32_t kMinSafeFloatU32  = 0x00000001U;
-constexpr std::uint32_t kMaxSafeFloatU32  = 0xFFFFFF00U;
+using mhw_sdk::kMinSafeFloatU32;
+using mhw_sdk::kMaxSafeFloatU32;
 
 const MhwRngHostApi*       g_host   = nullptr;
 MhwRngPluginId             g_selfId = 0U;
@@ -439,12 +440,7 @@ bool ResolveTarget(const std::string& token, std::vector<std::uint32_t>& outRvas
 // ============================================================================
 
 std::uint32_t PctToSafeFloatU32(double pct) noexcept {
-    if (!(pct > 0.0)) return kMinSafeFloatU32;
-    if (pct >= 100.0) return kMaxSafeFloatU32;
-    const auto u = static_cast<std::uint64_t>((pct / 100.0) * static_cast<double>(kMaxSafeFloatU32) + 0.5);
-    if (u <= kMinSafeFloatU32) return kMinSafeFloatU32;
-    if (u >= kMaxSafeFloatU32) return kMaxSafeFloatU32;
-    return static_cast<std::uint32_t>(u);
+    return mhw_sdk::PercentToOpenSafeU32(pct);
 }
 
 bool ParseSmartValue(const std::string& rawTok,
@@ -902,6 +898,12 @@ bool WriteDumpFile(const std::string& path, std::uint32_t& outCount) {
     std::fprintf(f, en ? " Summary  : %u active (RVA,Cond) slots  =  Active overrides/hooks %zu  |  Core %zu  |  Background %zu\r\n"
                        : u8" 概览统计 : 共 %u 个活跃(RVA,Cond)槽  =  激活规则/插件钩子 %zu 处  |  核心玩法 %zu 处  |  背景环境/特效 %zu 处\r\n",
                  outCount, ovrRows.size(), coreRows.size(), bgRows.size());
+    {
+        char worldBuf[128]{};
+        if (MhwWorld_TryFormatSummary(g_host, worldBuf, sizeof(worldBuf), en)) {
+            std::fprintf(f, en ? " World    : %s\r\n" : u8" 世界状态 : %s\r\n", worldBuf);
+        }
+    }
     std::fprintf(f, "========================================================================================================================\r\n\r\n");
 
     auto writeRow = [&](const Row& r) {
@@ -1691,6 +1693,31 @@ void __fastcall Complete_Inspector(const char* subcmd,
     }
 }
 
+bool __fastcall CatalogResolveAliasToRva(const char* aliasOrShortcut, std::uint32_t* outRva) {
+    if (!aliasOrShortcut || aliasOrShortcut[0] == '\0' || !outRva) return false;
+    *outRva = 0U;
+    std::vector<std::uint32_t> rvas;
+    std::string label;
+    if (!ResolveTarget(aliasOrShortcut, rvas, label) || rvas.empty()) return false;
+    *outRva = rvas[0];
+    return *outRva != 0U;
+}
+
+bool __fastcall CatalogQuerySite(std::uint32_t rva, MhwRngSiteMeta* outMeta) {
+    if (!outMeta || rva == 0U) return false;
+    if (g_host && g_host->QuerySiteMeta) {
+        return g_host->QuerySiteMeta(rva, outMeta);
+    }
+    return InspectorMetaResolver(rva, outMeta, nullptr);
+}
+
+const MhwCatalogApi kCatalogServiceApi = {
+    kMhwCatalogServiceVersion,
+    sizeof(MhwCatalogApi),
+    &CatalogResolveAliasToRva,
+    &CatalogQuerySite
+};
+
 const MhwRngPluginDescriptor kPluginDesc = {
     kMhwRngApiVersion,
     "inspector",
@@ -1739,14 +1766,22 @@ MHW_RNG_PLUGIN_EXPORT bool MhwRngPlugin_Init(const MhwRngHostApi* host, MhwRngPl
     for (const char* sc : kInspectorCmds) {
         MhwRng_RegisterSubcommandCompleter(host, selfId, sc, &Complete_Inspector, nullptr);
     }
+    MhwRng_HostRegisterService(host, selfId, kMhwCatalogServiceName, kMhwCatalogServiceVersion, &kCatalogServiceApi);
     return true;
 }
 
 MHW_RNG_PLUGIN_EXPORT void MhwRngPlugin_Shutdown() {
     StopTraceObserver();
     ClearTraceRecords();
-    std::lock_guard<std::mutex> lk(g_idxMx);
-    g_indexedRvas.clear();
-    g_host   = nullptr;
-    g_selfId = 0U;
+    const MhwRngHostApi* hostCopy = nullptr;
+    MhwRngPluginId       selfCopy = 0U;
+    {
+        std::lock_guard<std::mutex> lk(g_idxMx);
+        hostCopy = g_host;
+        selfCopy = g_selfId;
+        g_indexedRvas.clear();
+        g_host   = nullptr;
+        g_selfId = 0U;
+    }
+    MhwRng_HostUnregisterService(hostCopy, selfCopy, kMhwCatalogServiceName);
 }
